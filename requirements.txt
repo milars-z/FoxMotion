@@ -1,0 +1,11 @@
+-c constraints.txt
+safetensors>=0.8,<1
+numpy>=2,<3
+fastapi>=0.121,<1
+uvicorn>=0.34,<1
+pydantic-settings>=2.8,<3
+python-multipart>=0.0.20,<1
+httpx>=0.28,<0.29
+websockets>=15,<17
+filelock>=3.18,<4
+pillow>=11.2,<14

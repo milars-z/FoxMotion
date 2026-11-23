@@ -1,0 +1,24 @@
+{
+  "family": "FL2VA",
+  "durations": [3],
+  "resolutions": ["640x360"],
+  "steps": [20],
+  "preset": "FL2VA local",
+  "confirmed_loras": [],
+  "variants": [{
+    "workflow": "text.api.json",
+    "fields": {
+      "prompt": [{"node":"<prompt node id>","input":"<literal input>"}],
+      "seed": [{"node":"<seed node id>","input":"<seed field>"}],
+      "duration": [{"node":"<duration node id>","input":"<frame count field>","values":{"3":"<replace with verified numeric frame count>"}}],
+      "width": [{"node":"<width node id>","input":"<width field>"}],
+      "height": [{"node":"<height node id>","input":"<height field>"}],
+      "steps": [{"node":"<steps node id>","input":"<steps field>"}],
+      "output_prefix": [{"node":"<save node id>","input":"<filename prefix field>"}]
+    },
+    "slots": {},
+    "models": [{"node":"<diffusion loader id>","input":"<weight selector>","folder":"diffusion_models","base":true}],
+    "output_node":"<save node id>",
+    "output_key":"<verified history output array key>"
+  }]
+}
