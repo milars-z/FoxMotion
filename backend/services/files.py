@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 import subprocess
@@ -42,6 +43,31 @@ def clear_job(root, job_id):
     path = job_dir(root, job_id)
     if path.exists():
         shutil.rmtree(path)
+
+
+def publish_result(source: Path, root: Path, job_id: str):
+    """Write the final object once. SQLite publishes its name after read-back."""
+    directory = job_dir(root, job_id)
+    directory.mkdir(exist_ok=True)
+    target = inside(directory, source.name)
+    if target.exists():
+        raise FileExistsError("持久卷成片已存在")
+    digest = hashlib.sha256()
+    with source.open("rb") as src:
+        # Job and output UUIDs are allocated by the single writer on this volume.
+        out = target.open("wb")
+        try:
+            with out:
+                while block := src.read(1024 * 1024):
+                    digest.update(block)
+                    out.write(block)
+            with target.open("rb") as saved:
+                if hashlib.file_digest(saved, "sha256").digest() != digest.digest():
+                    raise OSError("持久卷成片校验失败")
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+    return target
 
 
 def validate_media(path, kind):

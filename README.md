@@ -46,3 +46,5 @@ Windows Mock 已支持选择 non-pruned FL2VA profile 与 HMNSFW Extreme Realism
 缺少真实 API 工作流时，ComfyUI 模式返回 `NOT_CONFIGURED`。仓库内的 bindings 示例不能直接提交给 ComfyUI。请在目标机器手工验证模型文件与官方模板，按 [工作流导出](docs/WORKFLOW_EXPORT.md) 和 [ComfyUI 对接](docs/COMFYUI_INTEGRATION.md) 配置。FL2VA 与 Ref2VA 分别管理。GPU 显存占用、生成质量、速度及 L40S 上的真实工作流仍待实测。
 
 Ubuntu 安装、加密 EBS 核对、systemd 和 Windows SSH 隧道见 [AWS 部署](docs/AWS_DEPLOYMENT.md)。接口与队列见 [架构](docs/ARCHITECTURE.md)，访问边界与备份见 [安全说明](docs/SECURITY.md)。
+
+RunPod Secure Cloud 的 A40 环境、Global Volume 分盘、SSH 访问及 Pod 重建步骤见 [RunPod 部署手册](README_RUNPOD.md)。

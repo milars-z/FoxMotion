@@ -14,6 +14,7 @@ from backend.inference.base import (
     build_backend,
 )
 from backend.models.jobs import Request
+from backend.services.files import publish_result
 from backend.services.store import Store
 
 log = logging.getLogger("h3.worker")
@@ -49,7 +50,23 @@ class Worker:
             await self.backend.validate(req)
             run.check()
             path = await self.backend.generate(run)
-            self.store.finish(run.id, "completed", "生成完成", output=path.name)
+            if (
+                self.cfg.result_dir
+                and self.cfg.result_dir.resolve() != run.outputs.parent
+            ):
+                run.check()
+                run.stage("保存成片至持久卷")
+                published = await asyncio.to_thread(
+                    publish_result, path, self.cfg.result_dir, run.id
+                )
+                self.store.finish(run.id, "completed", "生成完成", output=path.name)
+                row = self.store.get(run.id)
+                with suppress(OSError):
+                    if not row or row["status"] != "completed":
+                        published.unlink(missing_ok=True)
+                    path.unlink(missing_ok=True)
+            else:
+                self.store.finish(run.id, "completed", "生成完成", output=path.name)
         except Canceled:
             self.store.finish(run.id, "canceled", "已取消")
         except (LostExecution, asyncio.CancelledError) as err:

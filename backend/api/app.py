@@ -295,6 +295,10 @@ def create_app(cfg: Settings):
     def sweep(key):
         for part in ("inputs", "outputs", "temp"):
             clear_job(store.root / part, key)
+        if cfg.result_dir and cfg.result_dir.resolve() != store.root / "outputs":
+            if not cfg.result_dir.is_dir():
+                raise OSError("持久卷输出目录不可用")
+            clear_job(cfg.result_dir, key)
         for kind in ("input", "output"):
             base = cfg.comfy_dir(kind) / "h3studio"
             if base.exists():
@@ -336,6 +340,10 @@ def create_app(cfg: Settings):
         if row["status"] != "completed" or not row["output_path"]:
             raise HTTPException(409, "任务尚无可用结果")
         path = inside(job_dir(store.root / "outputs", str(job_id)), row["output_path"])
+        if cfg.result_dir:
+            published = inside(job_dir(cfg.result_dir, str(job_id)), row["output_path"])
+            if published.is_file():
+                path = published
         if not path.is_file():
             raise HTTPException(410, "结果文件已丢失")
         return FileResponse(
