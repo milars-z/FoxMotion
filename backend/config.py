@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     comfyui_input_dir: Path | None = None
     comfyui_output_dir: Path | None = None
     comfyui_model_dir: Path | None = None
+    private_retention_seconds: int = Field(3600, ge=60, le=604800)
+
+    @property
+    def private_root(self):
+        return self.data_dir.resolve().parent / (self.data_dir.resolve().name + "-private")
+
     max_file_mb: int = Field(64, ge=1, le=1024)
     max_request_mb: int = Field(192, ge=1, le=4096)
     mock_stage_seconds: float = Field(1, ge=0, le=30)

@@ -25,11 +25,13 @@ import { ProfilePicker } from "./ProfilePicker";
 
 function Form({
   cap: legacy,
+  privacyMode,
   caps,
   onJob,
   online,
 }: {
   cap: Capability;
+  privacyMode: boolean;
   caps: Caps;
   onJob: (j: Job) => void;
   online: boolean;
@@ -130,6 +132,7 @@ function Form({
             "payload",
             JSON.stringify({
               mode: cap.mode,
+              privacy_mode: privacyMode,
               prompt,
               parameters: {
                 duration,
@@ -157,8 +160,10 @@ function Form({
               roles: assets.map((a) => a.role),
             }),
           );
-          assets.forEach((a) => data.append("files", a.file));
+          assets.forEach((a, i) => data.append("files", a.file,
+            privacyMode ? "upload-" + i + "." + a.file.name.split(".").pop() : a.file.name));
           onJob(await api<Job>("jobs", { method: "POST", body: data }));
+          if (privacyMode) { setPrompt(""); setAssets([]); }
         } catch (err) {
           setError((err as Error).message);
         } finally {
@@ -385,6 +390,7 @@ export function Controls({
   online: boolean;
   onJob: (j: Job) => void;
 }) {
+  const [privacyMode, setPrivacyMode] = useState(false);
   const [mode, setMode] = useState<Mode>("text"),
     cap = caps.modes.find((c) => c.mode === mode)!;
   const icons = { text: Type, image: Image, reference: Layers3 };
@@ -393,6 +399,12 @@ export function Controls({
       <div className="paneltitle">
         <SlidersHorizontal size={17} />
         <h2>生成设置</h2>
+      </div>
+      <div className="privacy-choice">
+        <label><input type="checkbox" checked={privacyMode}
+          onChange={e => setPrivacyMode(e.target.checked)} />保密上传</label>
+        {privacyMode && <small>素材仅临时保存在容器本地，任务结束后清理。成片可播放、下载，
+          请在下载后确认清理，或等待 {Math.ceil((caps.private_retention_seconds ?? 3600) / 60)} 分钟自动清理。</small>}
       </div>
       <div className="modebar">
         {caps.modes.map((c) => {
@@ -411,7 +423,7 @@ export function Controls({
       </div>
       <Form
         key={mode + JSON.stringify(cap)}
-        {...{ cap, caps, online, onJob }}
+        {...{ cap, caps, online, onJob, privacyMode }}
       />
     </section>
   );

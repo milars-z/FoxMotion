@@ -9,6 +9,7 @@ __pycache__/
 .env.*
 !.env.example
 data/
+data-private/
 .private/
 *.db*
 *.sqlite*

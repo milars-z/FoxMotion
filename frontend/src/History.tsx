@@ -72,7 +72,7 @@ export function History({
                 </span>
                 <small>{modeName[j.mode]}</small>
               </span>
-              <strong>{j.prompt}</strong>
+              <strong>{j.privacy_mode ? "保密任务" : j.prompt}</strong>
               <small>
                 {new Date(j.created_at).toLocaleString("zh-CN", {
                   month: "2-digit",
@@ -87,7 +87,7 @@ export function History({
               <button
                 disabled={busy}
                 className="del icon"
-                aria-label="删除任务"
+                aria-label={j.privacy_mode ? "清理保密任务" : "删除任务"}
                 onClick={() => setDeleting(j.job_id)}
               >
                 <Trash2 size={14} />
@@ -95,7 +95,7 @@ export function History({
             )}
             {deleting === j.job_id && (
               <div className="confirm">
-                <span>删除此任务及文件？</span>
+                <span>{j.privacy_mode ? "确认清理临时成片与任务记录？" : "删除此任务及文件？"}</span>
                 <button
                   disabled={busy}
                   onClick={async () => {

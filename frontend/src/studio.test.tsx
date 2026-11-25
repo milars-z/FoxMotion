@@ -134,6 +134,24 @@ describe("生成表单", () => {
       seed: -1,
     });
   });
+  it("keeps private mode selected across modes and clears the submitted caption", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true, status: 201, json: async () => ({ job_id: "private", privacy_mode: true }),
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const received = vi.fn();
+    render(<Controls caps={caps} online onJob={received} />);
+    fireEvent.click(screen.getByLabelText("保密上传"));
+    fireEvent.click(screen.getByText("图生视频"));
+    fireEvent.click(screen.getByText("文生视频"));
+    expect((screen.getByLabelText("保密上传") as HTMLInputElement).checked).toBe(true);
+    const prompt = screen.getByLabelText("场景提示词") as HTMLTextAreaElement;
+    fireEvent.change(prompt, { target: { value: "synthetic hidden caption" } });
+    fireEvent.click(screen.getByText("生成视频"));
+    await waitFor(() => expect(received).toHaveBeenCalledOnce());
+    expect(JSON.parse(fetcher.mock.calls[0][1].body.get("payload")).privacy_mode).toBe(true);
+    expect(prompt.value).toBe("");
+  });
   it("enforces verified reference combinations", () => {
     const opt = {
       ...options,

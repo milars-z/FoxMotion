@@ -75,6 +75,13 @@ def backup(data, backups):
             closing(sqlite3.connect(copy)) as db,
         ):
             src.backup(db)
+            if "privacy_mode" in {c[1] for c in db.execute("PRAGMA table_info(jobs)")}:
+                db.execute("PRAGMA secure_delete=ON")
+                db.execute("DELETE FROM jobs WHERE privacy_mode<>0")
+                db.commit()
+                # Rebuild the local copy, including pages freed by earlier private jobs.
+                db.execute("VACUUM")
+                db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             with tar.open("wb") as stream:
                 writer = DigestWriter(stream)
                 with tarfile.open(fileobj=writer, mode="w|") as archive:

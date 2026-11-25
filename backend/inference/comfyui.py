@@ -22,6 +22,8 @@ from backend.models.jobs import (
 )
 from backend.models.registry import DEFAULT_PROFILE, manifest_path
 from backend.services.files import inside, validate_media
+from backend.services import privacy
+from . import private_comfy
 
 from .base import Canceled, InferenceBackend, InferenceError, LostExecution
 from .workflow import WorkflowAdapter, demand, safe_relative
@@ -38,10 +40,10 @@ def normalize_reference(source, dest, video, resolution):
     else:
         command += ["-map","0:a:0","-vn","-ar","32000","-ac","2","-c:a","pcm_s16le"]
     try:
-        subprocess.run([*command,str(dest)],check=True,capture_output=True,timeout=180)
+        subprocess.run([*command,"-map_metadata","-1","-map_chapters","-1",str(dest)],check=True,capture_output=True,timeout=180)
         if video:
             count = subprocess.check_output(["ffprobe","-v","error","-select_streams","v:0",
-                    "-show_entries","stream=nb_frames","-of","csv=p=0",str(dest)], text=True)
+                    "-show_entries","stream=nb_frames","-of","csv=p=0",str(dest)], text=True, stderr=subprocess.PIPE)
             if int(count.strip()) < 5:
                 raise InferenceError("参考视频至少需要 5 帧（24 fps）")
     except (subprocess.SubprocessError, ValueError) as exc:
@@ -116,16 +118,23 @@ class ComfyUIBackend(InferenceBackend):
         except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError):
             return False
 
+    async def clean_private(self, journal):
+        async with self.client() as client:
+            return await private_comfy.clean(client, journal)
+
     async def inputs(self, client, run, files, reference_size=None):
         names = defaultdict(list)
-        sub = f"h3studio/{run.id}"
+        sub = run.comfy_subfolder
         root = inside(self.cfg.comfy_dir("input"), sub)
         root.mkdir(parents=True, exist_ok=True)
         for f in files:
             run.check()
             path = inside(run.inputs, f["name"])
             name = path.name
-            if KINDS[f["role"]] == "image":
+            if run.private_path and KINDS[f["role"]] == "image":
+                name = path.stem + ".png"
+                await asyncio.to_thread(private_comfy.clean_image, path, inside(root, name))
+            elif KINDS[f["role"]] == "image":
                 with path.open("rb") as stream:
                     res = await client.post(
                         "/upload/image",
@@ -164,7 +173,7 @@ class ComfyUIBackend(InferenceBackend):
         f = candidates[0]
         sub = f["subfolder"].replace("\\", "/")
         demand(
-            sub == f"h3studio/{run.id}"
+            sub == run.comfy_subfolder
             and safe_relative(f["filename"])
             and "/" not in f["filename"],
             "拒绝读取任务专属目录以外的输出",
@@ -172,7 +181,7 @@ class ComfyUIBackend(InferenceBackend):
         src = inside(self.cfg.comfy_dir("output"), sub, f["filename"])
         dest = run.outputs / f"{uuid4()}{src.suffix.lower()}"
         demand(src.is_file(), "ComfyUI 结果文件不存在")
-        await asyncio.to_thread(shutil.copyfile, src, dest)
+        await asyncio.to_thread(private_comfy.copy_video if run.private_path else shutil.copyfile, src, dest)
         await asyncio.to_thread(validate_media, dest, "video")
         return dest
 
@@ -278,6 +287,12 @@ class ComfyUIBackend(InferenceBackend):
                     roles=[f["role"] for f in files],
                 )
                 p = req.parameters
+                if run.private_path:
+                    flags = (await self.get(client, "/system_stats"))["system"].get("argv", [])
+                    if "--cache-classic" not in flags or "--enable-assets" in flags:
+                        raise InferenceError("保密执行需要 classic 缓存并关闭资产索引")
+                    for kind in ("input", "output"):
+                        privacy.local_dir(privacy.staging(self.cfg, kind, run.staging_key))
                 adapter = await asyncio.to_thread(
                     WorkflowAdapter,
                     self.cfg,
@@ -298,27 +313,36 @@ class ComfyUIBackend(InferenceBackend):
                     names = await self.inputs(client, run, files, req.parameters.resolution)
                 else:
                     names = await self.inputs(client, run, files)
-                graph, v = adapter.render(req, names, f"h3studio/{run.id}/{uuid4()}")
-                with suppress(OSError, WebSocketException, TimeoutError):
-                    ws = await self.websocket(
-                        self.cfg.comfyui_url.replace("http://", "ws://", 1)
-                        + "/ws?clientId="
-                        + client_id,
-                        open_timeout=3,
-                        close_timeout=1,
-                        proxy=None,
-                    )
+                bound = req.model_copy(update={"prompt":"private caption"}) if run.private_path else req
+                graph, v = adapter.render(bound, names, f"{run.comfy_subfolder}/{uuid4()}")
+                body = {"client_id": client_id, "prompt": graph}
+                if run.private_path:
+                    private_comfy.protect_graph(graph, v, privacy.staging(self.cfg, "input", run.staging_key), req.prompt)
+                    generation_id = str(uuid4())
+                    journal = {"generation":generation_id, "scrub":str(uuid4()),
+                               "graph":private_comfy.maintenance_graph(graph)}
+                    body.update(prompt_id=generation_id, extra_data={"preview_method":"none"})
+                if not run.private_path:
+                    with suppress(OSError, WebSocketException, TimeoutError):
+                        ws = await self.websocket(
+                            self.cfg.comfyui_url.replace("http://", "ws://", 1) + "/ws?clientId=" + client_id,
+                            open_timeout=3, close_timeout=1, proxy=None,
+                        )
                 run.check()
+                if run.private_path:
+                    privacy.write_json(run.private_path / "comfy.json", journal)
                 submitted = True
-                res = await client.post(
-                    "/prompt", json={"client_id": client_id, "prompt": graph}
-                )
+                res = await client.post("/prompt", json=body)
                 if res.status_code == 400:
+                    if run.private_path:
+                        (run.private_path / "comfy.json").unlink(missing_ok=True)
                     raise InferenceError("ComfyUI 拒绝工作流，请检查节点和输入绑定")
                 res.raise_for_status()
                 pid = res.json()["prompt_id"]
                 if not isinstance(pid, str) or not safe_relative(pid) or "/" in pid:
                     raise LostExecution("ComfyUI 返回了无效任务 ID，请核对本机队列")
+                if run.private_path and pid != generation_id:
+                    raise LostExecution("保密任务编号未确认")
                 run.remote(pid)
                 return await self.monitor(
                     run,

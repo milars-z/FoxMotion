@@ -101,6 +101,7 @@ export function App() {
   const remove = async (j: Job) => {
     try {
       await api("jobs/" + j.job_id, { method: "DELETE" });
+      setJobs(rows => rows.filter(row => row.job_id !== j.job_id));
       if (selected === j.job_id) {
         setSelected("");
         setDetail(null);
@@ -171,6 +172,7 @@ export function App() {
             job={job}
             backend={caps?.backend ?? ""}
             action={action}
+            remove={remove}
             busy={busy}
           />
           <History

@@ -25,6 +25,7 @@ export type Capability = {
   options: Options | null;
 };
 export type Caps = {
+  private_retention_seconds?: number;
   catalog?: Catalog;
   backend: string;
   modes: Capability[];
@@ -81,6 +82,8 @@ export type Catalog = {
 };
 export type Asset = { role: Role; file: File };
 export type Job = {
+  privacy_mode?: boolean;
+  privacy_cleanup_pending?: boolean;
   job_id: string;
   mode: Mode;
   prompt: string;

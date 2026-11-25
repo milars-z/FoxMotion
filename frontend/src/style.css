@@ -865,3 +865,7 @@ footer b {
 .gpu-status button:disabled,.asset-order button:disabled { opacity:.5; cursor:default; }
 .asset-order { display:flex; align-items:center; gap:6px; margin-top:8px; }
 .asset-order code { margin-right:auto; }
+.privacy-choice { margin: 0 18px 12px; }
+.privacy-choice label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.privacy-choice input { width: 16px; height: 16px; accent-color: var(--accent, #569d85); }
+.privacy-choice small { display: block; margin-top: 6px; line-height: 1.5; }

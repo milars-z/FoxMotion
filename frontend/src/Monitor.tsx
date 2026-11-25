@@ -20,14 +20,17 @@ export const Stamp = ({ code }: { code: string }) => (
 export function Monitor({
   job,
   backend,
+  remove,
   action,
   busy,
 }: {
   job: Job | null;
   backend: string;
+  remove: (job: Job) => Promise<void>;
   action: (path: string) => void;
   busy: boolean;
 }) {
+  const [confirmId, setConfirmId] = useState("");
   const screen = useRef<HTMLDivElement>(null),
     [playing, play] = useState(false),
     [fullError, setFullError] = useState("");
@@ -106,7 +109,7 @@ export function Monitor({
         </div>
         {job ? (
           <>
-            <div className="jobprompt">{job.prompt}</div>
+            <div className="jobprompt">{job.privacy_mode ? "保密任务" : job.prompt}</div>
             <div className="metrics">
               <span>
                 <small>执行阶段</small>
@@ -124,7 +127,7 @@ export function Monitor({
             <div className="jobmeta">
               {job.backend === "mock" ? "Mock 测试片 · " : ""}
               {job.parameters.preset} · {job.parameters.steps} 步 · Seed{" "}
-              {job.parameters.seed} · {job.input_files.length} 个素材
+              {job.parameters.seed}{!job.privacy_mode && " · " + job.input_files.length + " 个素材"}
               <div>
                 Profile {job.parameters.model_profile_id ?? "原有工作流"} · LoRA{" "}
                 {job.parameters.lora_id ?? "None"} · 强度{" "}
@@ -141,6 +144,7 @@ export function Monitor({
                     : "关"}
               </div>
             </div>
+            {job.privacy_cleanup_pending && <p role="status">正在清理保密输入和推理缓存，完成后可清理任务记录。</p>}
             {job.error_message && (
               <p className="error" role="alert">
                 {job.error_message}
@@ -164,6 +168,11 @@ export function Monitor({
                   <Square size={13} />
                   {job.cancel_requested ? "取消中" : "取消任务"}
                 </button>
+              ) : job.privacy_mode ? (
+                confirmId === job.job_id ? <>
+                  <button onClick={async () => { await remove(job); setConfirmId(""); }}>确认清理成片与记录</button>
+                  <button onClick={() => setConfirmId("")}>保留</button>
+                </> : <button onClick={() => setConfirmId(job.job_id)}>清理保密任务</button>
               ) : (
                 <button disabled={busy} onClick={() => action("regenerate")}>
                   <RotateCcw size={14} />
@@ -188,7 +197,7 @@ export function Monitor({
         <Check size={14} />
         {backend === "mock"
           ? "Mock 模式生成本地测试片，用于验证工作流程。"
-          : "素材与生成结果保存在本机。"}
+          : job?.privacy_mode ? "保密成片仅供临时播放与下载。" : "普通任务按部署配置保存素材与成片。"}
       </div>
     </div>
   );

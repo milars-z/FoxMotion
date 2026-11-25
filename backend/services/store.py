@@ -21,6 +21,9 @@ class Store:
         with self.connection() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(SCHEMA.read_text(encoding="utf-8"))
+            with self.connection(True) as migration:
+                if "privacy_mode" not in {col[1] for col in migration.execute("PRAGMA table_info(jobs)")}:
+                    migration.execute("ALTER TABLE jobs ADD COLUMN privacy_mode INTEGER NOT NULL DEFAULT 0")
             db.execute("CREATE TABLE IF NOT EXISTS trash (job_id TEXT PRIMARY KEY)")
 
     @contextmanager
@@ -56,15 +59,16 @@ class Store:
     def insert(self, db, job_id, req, inputs, backend):
         db.execute(
             """INSERT INTO jobs(job_id,mode,prompt,parameters_json,input_files_json,
-                   backend,status,created_at,stage) VALUES(?,?,?,?,?,?,'queued',?,'等待执行')""",
+                   backend,status,created_at,stage,privacy_mode) VALUES(?,?,?,?,?,?,'queued',?,'等待执行',?)""",
             (
                 job_id,
                 req.mode,
-                req.prompt,
+                "" if req.privacy_mode else req.prompt,
                 req.parameters.model_dump_json(),
-                json.dumps(inputs),
+                "[]" if req.privacy_mode else json.dumps(inputs),
                 backend,
                 now(),
+                int(req.privacy_mode),
             ),
         )
         return dict(
@@ -115,7 +119,7 @@ class Store:
         with self.connection(True) as db:
             db.execute(
                 """UPDATE jobs SET status='interrupted',stage='执行中断',finished_at=?,
-                        error_message='Worker 上次执行中断，可重新生成。' WHERE status='running'""",
+                        error_message=CASE WHEN privacy_mode=1 THEN '保密执行中断，正在清理'\n                        ELSE 'Worker 上次执行中断，可重新生成。' END WHERE status='running'""",
                 (now(),),
             )
 

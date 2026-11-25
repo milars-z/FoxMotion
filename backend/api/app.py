@@ -1,5 +1,5 @@
 import httpx
-from backend.services import gpu
+from backend.services import gpu, privacy
 
 import json
 import logging
@@ -60,8 +60,13 @@ UPLOAD_SCHEMA = {
 }
 
 
-def public(row):
+def public(row, cfg):
+    pending = False
+    if row.get("privacy_mode") and row["status"] in TERMINAL:
+        work = cfg.private_root / "jobs" / row["job_id"]
+        pending = any((work / name).exists() for name in ("request.json", "stage.json", "comfy.json"))
     return {
+        "privacy_cleanup_pending": pending,
         **{
             k: row[k]
             for k in (
@@ -78,6 +83,7 @@ def public(row):
                 "comfy_prompt_id",
             )
         },
+        "privacy_mode": bool(row.get("privacy_mode", False)),
         "parameters": json.loads(row["parameters_json"]),
         "input_files": json.loads(row["input_files_json"]),
         "cancel_requested": bool(row["cancel_requested"]),
@@ -158,6 +164,7 @@ def create_app(cfg: Settings):
             "backend": cfg.inference_backend,
             "modes": await engine.capabilities(),
             "catalog": await catalog(cfg, engine),
+            "private_retention_seconds": cfg.private_retention_seconds,
             "max_file_mb": cfg.max_file_mb,
             "max_request_mb": cfg.max_request_mb,
             "media": MEDIA,
@@ -186,8 +193,27 @@ def create_app(cfg: Settings):
             raise HTTPException(404, "任务不存在")
         return row
 
-    def persist(req, uploads):
+    def persist(req, uploads, spool):
         job_id = str(uuid4())
+        if req.privacy_mode:
+            work = privacy.task(cfg, job_id)
+            staged = spool / "submission"
+            inputs_dir = privacy.local_dir(staged / "inputs")
+            inputs = [save_upload(f, inputs_dir, KINDS[role], role, cfg.max_file_mb * 1024**2)
+                      for role, f in zip(req.roles, uploads, strict=True)]
+            if req.parameters.seed == -1:
+                req.parameters.seed = secrets.randbelow(2**31)
+            privacy.write_json(staged / "request.json", {"prompt": req.prompt, "inputs": inputs})
+            with privacy.guard(cfg):
+                privacy.local_dir(work.parent)
+                staged.rename(work)
+                try:
+                    with store.connection(True) as db:
+                        row = store.insert(db, job_id, req, [], cfg.inference_backend)
+                except BaseException:
+                    privacy.remove_tree(work)
+                    raise
+            return public(row, cfg)
         root = job_dir(store.root / "inputs", job_id)
         root.mkdir()
         try:
@@ -203,15 +229,13 @@ def create_app(cfg: Settings):
             clear_job(store.root / "inputs", job_id)
             raise
         log.info("job=%s event=created", job_id)
-        return public(row)
+        return public(row, cfg)
 
     @app.post(
         "/api/jobs", status_code=201, response_model=Job, openapi_extra=UPLOAD_SCHEMA
     )
     async def create(request: HttpRequest):
-        async with request.form(
-            max_files=20, max_fields=1, max_part_size=64 * 1024
-        ) as form:
+        async with privacy.upload_form(request, cfg) as (form, spool):
             try:
                 req = Request.model_validate_json(form.get("payload", ""))
             except ValidationError as err:
@@ -238,7 +262,7 @@ def create_app(cfg: Settings):
                 raise HTTPException(422, "上传文件与角色列表不匹配")
             await check(req)
             try:
-                return await run_in_threadpool(persist, req, files)
+                return await run_in_threadpool(persist, req, files, spool)
             except ValueError as err:
                 raise HTTPException(422, str(err)) from err
             except RuntimeError as err:
@@ -250,11 +274,11 @@ def create_app(cfg: Settings):
 
     @app.get("/api/jobs", response_model=list[Job])
     def listing(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
-        return [public(row) for row in store.list(limit, offset)]
+        return [public(row, cfg) for row in store.list(limit, offset)]
 
     @app.get("/api/jobs/{job_id}", response_model=Job)
     def details(job_id: UUID):
-        return public(get(job_id))
+        return public(get(job_id), cfg)
 
     @app.post("/api/jobs/{job_id}/cancel", response_model=Job)
     def cancel(job_id: UUID):
@@ -277,11 +301,17 @@ def create_app(cfg: Settings):
                 )
             elif row[0] != "canceled":
                 raise HTTPException(409, "任务已经结束")
-        return public(get(key))
+        updated = get(key)
+        if updated["privacy_mode"] and updated["status"] == "canceled":
+            with privacy.guard(cfg):
+                privacy.remove_work(cfg, key)
+        return public(updated, cfg)
 
     @app.post("/api/jobs/{job_id}/regenerate", status_code=201, response_model=Job)
     async def regenerate(job_id: UUID):
-        row = public(get(job_id))
+        row = public(get(job_id), cfg)
+        if row["privacy_mode"]:
+            raise HTTPException(409, "保密素材已设为临时使用，请重新上传")
         req = Request(
             mode=row["mode"],
             prompt=row["prompt"],
@@ -309,7 +339,7 @@ def create_app(cfg: Settings):
                         shutil.copyfile(src, root / name)
                         inputs.append({**meta, "name": name})
                     result = store.insert(db, key, req, inputs, cfg.inference_backend)
-                return public(result)
+                return public(result, cfg)
             except BaseException:
                 clear_job(store.root / "inputs", key)
                 raise
@@ -344,6 +374,12 @@ def create_app(cfg: Settings):
         row = get(key)
         if row["status"] not in TERMINAL:
             raise HTTPException(409, "请先取消正在执行或排队的任务")
+        if row["privacy_mode"]:
+            try:
+                await run_in_threadpool(privacy.purge, cfg, store, key)
+            except (RuntimeError, OSError):
+                raise HTTPException(409, "保密清理待完成，请稍后重试") from None
+            return Response(status_code=204)
         if row["status"] == "interrupted" and row["backend"] == "comfyui":
             from backend.inference.comfyui import ComfyUIBackend
 
@@ -363,8 +399,12 @@ def create_app(cfg: Settings):
         row = get(job_id)
         if row["status"] != "completed" or not row["output_path"]:
             raise HTTPException(409, "任务尚无可用结果")
-        path = inside(job_dir(store.root / "outputs", str(job_id)), row["output_path"])
-        if cfg.result_dir:
+        if row["privacy_mode"] and privacy.expired(cfg, row["finished_at"]):
+            raise HTTPException(410, "保密成片已到期")
+        output_dir = (privacy.task(cfg, str(job_id)) / "result" if row["privacy_mode"]
+                      else job_dir(store.root / "outputs", str(job_id)))
+        path = inside(output_dir, row["output_path"])
+        if cfg.result_dir and not row["privacy_mode"]:
             published = inside(job_dir(cfg.result_dir, str(job_id)), row["output_path"])
             if published.is_file():
                 path = published

@@ -53,6 +53,7 @@ class Parameters(Strict):
 
 
 class Request(Strict):
+    privacy_mode: bool = False
     mode: Mode
     prompt: str = Field(min_length=1, max_length=4000)
     parameters: Parameters
@@ -107,6 +108,8 @@ class InputFile(Strict):
 
 
 class Job(Strict):
+    privacy_mode: bool = False
+    privacy_cleanup_pending: bool = False
     job_id: str
     mode: Mode
     prompt: str
