@@ -1,6 +1,8 @@
 # FoxMotion 在 RunPod Secure Cloud 的部署与恢复
 
-本手册适用于 Ubuntu 24.04 GPU Pod、50 GB 容器盘和挂载于 `/workspace` 的 `fuse.geesefs` Global Volume。部署从 CPU Mock 开始。Windows 已测试业务流程与快照逻辑；Pod 上的 Linux 依赖安装、Supervisor、真实挂载、A40 H3 基座和 LoRA 出片均待实测。
+本手册适用于 Ubuntu 24.04 GPU Pod、50 GB 容器盘和挂载于 `/workspace` 的 `fuse.geesefs` Global Volume。部署从 CPU Mock 开始。Windows 已测试业务流程与快照逻辑。迁移后的 A40 已使用首尾帧与 Turbo LoRA 完成小分辨率真实出片回归。
+
+A40 的迁移后实测、缓存配置、自动预热和离线 runtime 恢复见 [Phase 2 实验报告](docs/RUNPOD_PHASE2.md)。
 
 ## 从已克隆的仓库启动 Mock
 
