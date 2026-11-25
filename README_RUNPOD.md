@@ -154,3 +154,7 @@ Get-ChildItem deploy/runpod/*.sh | ForEach-Object {
     if ($LASTEXITCODE) { throw "Bash syntax check failed: $_" }
 }
 ```
+
+## 2026-11-26 部署交接
+
+[保留容器盘或迁移新主机的快速恢复命令](docs/RUNPOD_QUICK_RESTORE.md) · [实测汇总、隐私验收与下一轮计划](docs/RUNPOD_CLOSEOUT_2026-11-26.md)
