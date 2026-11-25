@@ -1,0 +1,10 @@
+{
+  "templates_package": "0.1.37",
+  "template_sha256": {
+    "video_minimax_h3_t2v.json": "31ab33fdb053a7834cc866bd7aa08b887518fc656e4a796c89779c6b5e1786e6",
+    "video_minimax_h3_r2v.json": "099d24eda6263854818975c7209db6f29ebfd0339936c928f12293d5ab029ffb",
+    "ref-turbo.json": "b906a154f9a45047714c43c038d345a6c645fda44e53f3b6f6aef23d3e179028"
+  },
+  "turbo_commit": "02e26d591f7a04d5d1a074c9566d5dd4f22f6225",
+  "weights_revision": "4b53a35191437de05370da548e59aeabe2a5a09a"
+}

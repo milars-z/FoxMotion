@@ -1,0 +1,117 @@
+{
+  "family": "FL2VA",
+  "durations": [
+    0.9,
+    2,
+    5
+  ],
+  "resolutions": [
+    "320x192",
+    "608x352",
+    "864x480",
+    "1280x704"
+  ],
+  "steps": [
+    6,
+    12,
+    20
+  ],
+  "preset": "H3 FL2VA T2V",
+  "confirmed_loras": [],
+  "variants": [
+    {
+      "workflow": "text.api.json",
+      "fields": {
+        "prompt": [
+          {
+            "node": "140:131",
+            "input": "prompt"
+          }
+        ],
+        "seed": [
+          {
+            "node": "140:129",
+            "input": "noise_seed"
+          }
+        ],
+        "duration": [
+          {
+            "node": "140:133",
+            "input": "value"
+          }
+        ],
+        "width": [
+          {
+            "node": "140:152",
+            "input": "value"
+          }
+        ],
+        "height": [
+          {
+            "node": "140:153",
+            "input": "value"
+          }
+        ],
+        "steps": [
+          {
+            "node": "140:124",
+            "input": "steps"
+          }
+        ],
+        "output_prefix": [
+          {
+            "node": "92",
+            "input": "filename_prefix"
+          }
+        ],
+        "sampler": [
+          {
+            "node": "140:123",
+            "input": "sampler_name"
+          }
+        ],
+        "scheduler": [
+          {
+            "node": "140:124",
+            "input": "scheduler"
+          }
+        ]
+      },
+      "slots": {},
+      "models": [
+        {
+          "node": "140:127",
+          "input": "unet_name",
+          "folder": "diffusion_models",
+          "base": true
+        },
+        {
+          "node": "140:128",
+          "input": "clip_name",
+          "folder": "text_encoders"
+        },
+        {
+          "node": "140:119",
+          "input": "vae_name",
+          "folder": "vae"
+        },
+        {
+          "node": "140:120",
+          "input": "vae_name",
+          "folder": "vae"
+        }
+      ],
+      "output_node": "92",
+      "output_key": "images"
+    }
+  ],
+  "selectable_sampling": true,
+  "samplers": [
+    "res_multistep",
+    "euler"
+  ],
+  "schedulers": [
+    "simple",
+    "normal"
+  ]
+}

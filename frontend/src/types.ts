@@ -10,6 +10,7 @@ export type Options = {
   steps: number[];
   presets: string[];
   slots: Slots;
+  reference_tags?: boolean;
   combinations?: Partial<Record<Role, number>>[];
   samplers?: string[];
   schedulers?: string[];
@@ -46,7 +47,7 @@ export type Params = {
   shift?: number | null;
   turbo_enabled?: boolean | null;
 };
-export type ModelProfile = { id: string; title: string; modes: Mode[] };
+export type ModelProfile = { bundled_lora?: string | null; id: string; title: string; modes: Mode[] };
 export type Lora = {
   id: string;
   title: string;

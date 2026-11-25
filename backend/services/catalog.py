@@ -13,6 +13,8 @@ def real_status(cfg, profile, lora, mode, cap):
         return "missing_workflow", "NOT_CONFIGURED · 缺少此组合的 API 工作流"
     if cfg.inference_backend == "mock":
         return "unverified", "Mock 只验证参数与队列，真实推理待验证"
+    if cap.ready and profile.bundled_lora:
+        return "configured", "官方 Turbo 工作流及本机权重已配置"
     if cap.ready:
         return "ready", "本机验证记录与实际权重、工作流和运行环境一致"
     if any(

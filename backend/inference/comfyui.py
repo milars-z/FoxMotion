@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+import subprocess
 import time
 from collections import defaultdict
 from contextlib import suppress
@@ -24,6 +25,27 @@ from backend.services.files import inside, validate_media
 
 from .base import Canceled, InferenceBackend, InferenceError, LostExecution
 from .workflow import WorkflowAdapter, demand, safe_relative
+
+
+def normalize_reference(source, dest, video, resolution):
+    width, height = map(int, resolution.split("x"))
+    command = ["ffmpeg", "-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe",
+               "-threads", "2", "-i", str(source), "-t", "15"]
+    if video:
+        # Limit decoded input size and normalize the 24 fps time base expected by H3.
+        scale = f"scale=w='min(iw,{width})':h='min(ih,{height})':force_original_aspect_ratio=decrease:force_divisible_by=2"
+        command += ["-map","0:v:0","-an","-vf","fps=24,"+scale,"-c:v","libx264","-threads","2","-pix_fmt","yuv420p"]
+    else:
+        command += ["-map","0:a:0","-vn","-ar","32000","-ac","2","-c:a","pcm_s16le"]
+    try:
+        subprocess.run([*command,str(dest)],check=True,capture_output=True,timeout=180)
+        if video:
+            count = subprocess.check_output(["ffprobe","-v","error","-select_streams","v:0",
+                    "-show_entries","stream=nb_frames","-of","csv=p=0",str(dest)], text=True)
+            if int(count.strip()) < 5:
+                raise InferenceError("参考视频至少需要 5 帧（24 fps）")
+    except (subprocess.SubprocessError, ValueError) as exc:
+        raise InferenceError("参考素材无法转换为 H3 支持的格式") from exc
 
 
 class ComfyUIBackend(InferenceBackend):
@@ -94,7 +116,7 @@ class ComfyUIBackend(InferenceBackend):
         except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError):
             return False
 
-    async def inputs(self, client, run, files):
+    async def inputs(self, client, run, files, reference_size=None):
         names = defaultdict(list)
         sub = f"h3studio/{run.id}"
         root = inside(self.cfg.comfy_dir("input"), sub)
@@ -118,6 +140,10 @@ class ComfyUIBackend(InferenceBackend):
                     and info.get("name") == name,
                     "ComfyUI 图片上传位置不匹配",
                 )
+            elif reference_size and f["role"] in ("ref_video", "ref_audio"):
+                is_video = f["role"] == "ref_video"
+                name = path.stem + ("-24fps.mp4" if is_video else "-32khz.wav")
+                await asyncio.to_thread(normalize_reference, path, inside(root, name), is_video, reference_size)
             else:
                 await asyncio.to_thread(shutil.copyfile, path, inside(root, name))
             names[f["role"]].append(sub + "/" + name)
@@ -267,7 +293,11 @@ class ComfyUIBackend(InferenceBackend):
                     if time.monotonic() >= deadline:
                         raise InferenceError("等待本机队列超时")
                     await asyncio.sleep(1)
-                names = await self.inputs(client, run, files)
+                dynamic_ref = any(v.reference_node for _, v, _ in adapter.graphs)
+                if dynamic_ref:
+                    names = await self.inputs(client, run, files, req.parameters.resolution)
+                else:
+                    names = await self.inputs(client, run, files)
                 graph, v = adapter.render(req, names, f"h3studio/{run.id}/{uuid4()}")
                 with suppress(OSError, WebSocketException, TimeoutError):
                     ws = await self.websocket(

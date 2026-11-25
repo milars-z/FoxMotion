@@ -1,3 +1,6 @@
+import httpx
+from backend.services import gpu
+
 import json
 import logging
 import platform
@@ -127,6 +130,27 @@ def create_app(cfg: Settings):
             "disk_free_gib": round(shutil.disk_usage(store.root).free / 2**30, 1),
             "worker": store.worker(),
         }
+
+    @app.get("/api/gpu")
+    async def gpu_status():
+        if cfg.inference_backend != "comfyui":
+            raise HTTPException(404, "当前为 Mock")
+        try:
+            return await gpu.status(cfg, store)
+        except httpx.HTTPError as exc:
+            raise HTTPException(503, "Comfy GPU 状态不可用") from exc
+
+    @app.post("/api/gpu/release")
+    async def gpu_release():
+        if cfg.inference_backend != "comfyui":
+            raise HTTPException(409, "当前为 Mock")
+        try:
+            await gpu.release(cfg, store)
+        except gpu.Busy as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (httpx.HTTPError, RuntimeError) as exc:
+            raise HTTPException(503, "Comfy 未确认显存释放") from exc
+        return {"released": True}
 
     @app.get("/api/capabilities")
     async def capabilities():

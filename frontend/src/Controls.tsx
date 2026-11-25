@@ -44,14 +44,15 @@ function Form({
   const [shift, setShift] = useState<number>(),
     [turbo, setTurbo] = useState(false);
   const lora = catalog?.loras.find((l) => l.id === loraId);
-  const advanced = !!catalog && profile !== catalog.default_profile_id;
+  const routed = !!catalog && profile !== catalog.default_profile_id;
+  const advanced = routed && !catalog?.profiles.find(p => p.id === profile)?.bundled_lora;
   const route = catalog?.routes.find(
     (r) =>
       r.model_profile_id === profile &&
       r.mode === legacy.mode &&
       r.lora_id === (strength > 0 ? loraId : null),
   );
-  const cap = advanced
+  const cap = routed
     ? (route?.capability ?? {
         ...legacy,
         ready: false,
@@ -143,6 +144,7 @@ function Form({
                       lora_strength: strength,
                     }
                   : {}),
+                ...(opt.samplers?.length ? { sampler, scheduler } : {}),
                 ...(advanced
                   ? {
                       sampler,
@@ -185,6 +187,7 @@ function Form({
           <label htmlFor="prompt">场景提示词</label>
           <small className="mono">{prompt.length} / 4000</small>
         </div>
+        {opt.reference_tags && <small>按同类素材顺序引用 &lt;Picture 1&gt;、&lt;Video 1&gt;、&lt;Audio 1&gt;。视频使用画面，声音可作为独立音频添加。</small>}
         <textarea
           id="prompt"
           maxLength={4000}
@@ -267,7 +270,7 @@ function Form({
           </select>
         </label>
         {selectors}
-        {advanced && (
+        {!!opt.samplers?.length && (
           <div className="profile-select">
             <div className="fieldgrid">
               <label>
@@ -292,7 +295,7 @@ function Form({
                   ))}
                 </select>
               </label>
-              <label>
+              {advanced && <><label>
                 Shift
                 <select
                   value={actualShift}
@@ -315,7 +318,7 @@ function Form({
                     </option>
                   ))}
                 </select>
-              </label>
+              </label></>}
             </div>
             {lora && (
               <>

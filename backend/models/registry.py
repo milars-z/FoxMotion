@@ -14,6 +14,7 @@ class Profile(BaseModel):
     modes: tuple[str, ...]
     family: str
     checkpoint: str | None = None
+    bundled_lora: str | None = None
 
 
 class Recommendation(BaseModel):
@@ -46,6 +47,11 @@ PROFILES = {
         title="原有工作流预设",
         family="workflow",
         modes=("text", "image", "reference"),
+    ),
+    "ref2va_turbo": Profile(
+        id="ref2va_turbo", title="MiniMax H3 Ref2VA · Turbo 4-step", modes=("reference",),
+        family="Ref2VA", checkpoint="minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        bundled_lora="minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
     ),
     H3: Profile(
         id=H3,

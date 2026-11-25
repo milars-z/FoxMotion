@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { ImagePlus, X } from "lucide-react";
 import { Asset, Caps, Options, Role, roleName } from "./types";
 
+const referenceTag: Partial<Record<Role, string>> = {
+  ref_image: "Picture", ref_video: "Video", ref_audio: "Audio",
+};
+
 function Preview({ asset, remove }: { asset: Asset; remove: () => void }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
@@ -62,13 +66,28 @@ export function Uploads({
                 {slot.min ? "必填" : "可选"} · {items.length}/{slot.max}
               </small>
             </div>
-            {items.map((a) => (
-              <Preview
-                key={assets.indexOf(a)}
-                asset={a}
-                remove={() => setAssets(assets.filter((it) => it !== a))}
-              />
-            ))}
+            {items.map((asset, index) => {
+              const tag = referenceTag[role];
+              function move(offset: number) {
+                const reordered = [...assets];
+                const from = assets.indexOf(asset);
+                const to = assets.indexOf(items[index + offset]);
+                [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
+                setAssets(reordered);
+              }
+              return (
+                <div key={assets.indexOf(asset)}>
+                  {tag && (
+                    <div className="asset-order">
+                      <code>{`<${tag} ${index + 1}>`}</code>
+                      <button type="button" disabled={index === 0} onClick={() => move(-1)}>前移</button>
+                      <button type="button" disabled={index === items.length - 1} onClick={() => move(1)}>后移</button>
+                    </div>
+                  )}
+                  <Preview asset={asset} remove={() => setAssets(assets.filter((it) => it !== asset))} />
+                </div>
+              );
+            })}
             {items.length < slot.max && (
               <label className="drop">
                 <ImagePlus size={16} />

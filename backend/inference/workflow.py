@@ -56,6 +56,7 @@ class Variant(Strict):
     output_node: str
     output_key: str
     loader: LoaderContract | None = None
+    reference_node: str | None = None
 
 
 class Manifest(Strict):
@@ -64,6 +65,7 @@ class Manifest(Strict):
     resolutions: list[str] = Field(min_length=1)
     steps: list[int] = Field(min_length=1)
     preset: str
+    selectable_sampling: bool = False
     confirmed_loras: list[str] = Field(default_factory=list)
     samplers: list[str] = Field(default_factory=list)
     schedulers: list[str] = Field(default_factory=list)
@@ -105,6 +107,8 @@ class WorkflowAdapter:
         self.mode = mode
         manifest_file = manifest_path(cfg, mode, profile_id, lora_id)
         self.profile = PROFILES[profile_id]
+        self.advanced = bool(self.profile.checkpoint and not self.profile.bundled_lora)
+        self.guarded_unet = 'FoxMotionUNETLoader' in objects
         self.lora = LORAS[lora_id] if lora_id else None
         demand(
             manifest_file.is_file(),
@@ -121,7 +125,7 @@ class WorkflowAdapter:
                 demand(safe_relative(variant.workflow), "工作流路径无效")
                 graph = read(inside(cfg.workflow_dir, variant.workflow))
                 self.verify(cfg, graph, variant, objects)
-                if self.profile.checkpoint:
+                if self.advanced:
                     self.revocation_paths[variant.workflow] = require_smoke(
                         cfg,
                         manifest_file,
@@ -147,6 +151,11 @@ class WorkflowAdapter:
                 for r in KINDS
                 if any(r in c for c in combinations)
             }
+            dynamic = any(v.reference_node for _, v, _ in self.graphs)
+            if dynamic:
+                demand(len(self.graphs) == 1, "动态参考图只接受一个模板")
+                limits = {r: Slot(max=n) for r, n in {"ref_image": 9, "ref_video": 3, "ref_audio": 3}.items()}
+                combinations = []
             self.cap = Capability(
                 mode=mode,
                 family=spec.family,
@@ -157,11 +166,12 @@ class WorkflowAdapter:
                     steps=spec.steps,
                     presets=[spec.preset],
                     slots=limits,
+                    reference_tags=dynamic,
                     combinations=combinations,
-                    samplers=spec.samplers if self.profile.checkpoint else [],
-                    schedulers=spec.schedulers if self.profile.checkpoint else [],
-                    shifts=spec.shifts if self.profile.checkpoint else [],
-                    turbo_options=[False] if self.profile.checkpoint else [],
+                    samplers=spec.samplers if self.advanced or spec.selectable_sampling else [],
+                    schedulers=spec.schedulers if self.advanced or spec.selectable_sampling else [],
+                    shifts=spec.shifts if self.advanced else [],
+                    turbo_options=[False] if self.advanced else [],
                 ),
             )
         except (
@@ -240,7 +250,15 @@ class WorkflowAdapter:
             "steps",
             "output_prefix",
         }
-        if self.profile.checkpoint:
+        if self.spec.selectable_sampling:
+            fields.update(("sampler", "scheduler"))
+            for key, choices in (("sampler", self.spec.samplers), ("scheduler", self.spec.schedulers)):
+                demand(bool(choices) and bool(v.fields.get(key)), "缺少采样配置")
+                for binding in v.fields[key]:
+                    definition = input_metadata(binding)
+                    available = definition[0] if isinstance(definition[0], list) else definition[1].get("options", [])
+                    demand(all(choice in available for choice in choices), "采样选项与本机节点不一致")
+        if self.advanced:
             fields.update(("sampler", "scheduler", "shift", "turbo_enabled"))
             if self.lora:
                 fields.add("lora_strength")
@@ -269,7 +287,16 @@ class WorkflowAdapter:
                 "需要有效的首尾帧绑定",
             )
         if self.mode == "reference":
-            demand(bool(v.slots), "参考模式需要素材")
+            demand(bool(v.slots) != bool(v.reference_node), "参考模式需要一种素材绑定")
+        if v.reference_node:
+            demand(self.mode == "reference" and graph.get(v.reference_node, {}).get("class_type")
+                   == "MiniMaxH3ReferenceToVideo", "参考节点类型不匹配")
+            demand(all(k in objects for k in ("LoadImage", "LoadAudio", "LoadVideo", "GetVideoComponents")),
+                   "参考素材加载节点缺失")
+        if self.profile.bundled_lora:
+            demand(self.spec.confirmed_loras == [self.profile.bundled_lora]
+                   and [graph[m.node]["inputs"][m.input] for m in v.models if m.folder == "loras"]
+                   == [self.profile.bundled_lora], "Turbo LoRA 与预设不符")
         seen = set()
         for target in [
             t for items in [*v.fields.values(), *v.slots.values()] for t in items
@@ -324,7 +351,7 @@ class WorkflowAdapter:
                 other = "ref2va" if self.spec.family == "FL2VA" else "fl2va"
                 demand(other not in name.lower(), "工作流混用了两种基础模型家族")
             if model.folder.lower() == "loras" or "lora" in name.lower():
-                if self.profile.checkpoint or Path(name).name.casefold() in {
+                if self.advanced or Path(name).name.casefold() in {
                     l.filename.casefold() for l in LORAS.values()
                 }:
                     demand(
@@ -344,7 +371,7 @@ class WorkflowAdapter:
                 ):
                     demand((node_id, key) in declared, "存在未声明的模型绑定")
         spec = self.spec
-        if self.profile.checkpoint:
+        if self.advanced:
             self.verify_profile(graph, v, objects, input_metadata)
         for r in spec.resolutions:
             Parameters(
@@ -516,10 +543,10 @@ class WorkflowAdapter:
     def render(self, req, uploads, prefix):
         counts = dict(Counter(req.roles))
         for expected, v, original in self.graphs:
-            if counts != expected:
+            if not v.reference_node and counts != expected:
                 continue
             graph = copy.deepcopy(original)
-            if self.profile.checkpoint:
+            if self.advanced:
                 for model in v.models:
                     if model.base:
                         graph[model.node]["inputs"][model.input] = (
@@ -541,5 +568,26 @@ class WorkflowAdapter:
             for role, targets in v.slots.items():
                 for t, name in zip(targets, uploads[role], strict=True):
                     graph[t.node]["inputs"][t.input] = name
+            if self.guarded_unet:
+                for m in v.models:
+                    if m.base and graph[m.node]["class_type"] == "UNETLoader":
+                        graph[m.node]["class_type"] = "FoxMotionUNETLoader"
+            if v.reference_node:
+                bind_references(graph, v.reference_node, uploads)
             return graph, v
         raise InferenceError("没有与素材数量匹配的已验证工作流")
+
+
+def bind_references(graph, target, uploads):
+    inputs = graph[target]["inputs"]
+    loaders = {"ref_image": ("LoadImage", "image"), "ref_video": ("LoadVideo", "file"),
+               "ref_audio": ("LoadAudio", "audio")}
+    for role, (kind, field) in loaders.items():
+        for index, filename in enumerate(uploads.get(role, [])):
+            node = f"studio_{role}_{index}"
+            graph[node] = {"class_type": kind, "inputs": {field: filename}}
+            if role == "ref_video":
+                split = node + "_frames"
+                graph[split] = {"class_type": "GetVideoComponents", "inputs": {"video": [node, 0]}}
+                node = split
+            inputs[f"{role}s.{role}_{index}"] = [node, 0]

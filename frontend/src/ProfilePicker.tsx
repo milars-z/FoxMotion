@@ -22,6 +22,7 @@ export function ProfilePicker({
   onLora,
   onStrength,
 }: Props) {
+  const fixed = catalog.profiles.find(p => p.id === profile)?.bundled_lora;
   return (
     <div className="profile-select">
       <label>
@@ -34,21 +35,21 @@ export function ProfilePicker({
         >
           {catalog.profiles.map((p) => (
             <option key={p.id} value={p.id} disabled={!p.modes.includes(mode)}>
-              {p.title}
+              {p.id === catalog.default_profile_id && mode === "reference" ? "MiniMax H3 Ref2VA · 基座" : p.title}
             </option>
           ))}
         </select>
       </label>
       <label>
         LoRA
-        <select
+        <select disabled={!!fixed}
           value={lora?.id ?? ""}
           onChange={(e) => {
             const selected = catalog.loras.find((l) => l.id === e.target.value);
             onLora(selected);
           }}
         >
-          <option value="">None（关闭）</option>
+          <option value="">{fixed ?? (profile === catalog.default_profile_id ? "由工作流指定" : "None（关闭）")}</option>
           {catalog.loras.map((l) => (
             <option
               key={l.id}
@@ -60,7 +61,7 @@ export function ProfilePicker({
           ))}
         </select>
       </label>
-      {!catalog.loras.some((l) => l.preferred_model_profile === profile) && (
+      {!fixed && !catalog.loras.some((l) => l.preferred_model_profile === profile) && (
         <small>当前 profile 没有已注册的可选 LoRA。</small>
       )}
       {lora && (
@@ -83,7 +84,7 @@ export function ProfilePicker({
       )}
       {route && (
         <small>
-          {route.status === "ready" ? "真实推理已验证" : "真实推理待验证"} ·{" "}
+          {fixed ? "工作流配置" : route.status === "ready" ? "真实推理已验证" : "真实推理待验证"} ·{" "}
           {route.status} · {route.reason}
         </small>
       )}

@@ -1,3 +1,4 @@
+import { GpuStatus } from "./GpuStatus";
 import { useEffect, useRef, useState } from "react";
 import { Cpu, HardDrive, LockKeyhole, Radio } from "lucide-react";
 import { api, Caps, Job, System } from "./types";
@@ -159,6 +160,7 @@ export function App() {
             </button>
           </div>
         )}
+        {caps?.backend === "comfyui" && <GpuStatus />}
         <div className="layout">
           {caps ? (
             <Controls caps={caps} online={online} onJob={added} />

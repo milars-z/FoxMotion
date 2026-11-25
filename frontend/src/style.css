@@ -858,3 +858,10 @@ footer b {
     display: none;
   }
 }
+.gpu-status { padding: 14px 18px; margin-bottom: 14px; }
+.gpu-status p,.gpu-status details { margin: 6px 0; font-size: .85rem; }
+.gpu-status details div { overflow-wrap:anywhere; }
+.gpu-status button,.asset-order button { padding: 4px 10px; cursor:pointer; }
+.gpu-status button:disabled,.asset-order button:disabled { opacity:.5; cursor:default; }
+.asset-order { display:flex; align-items:center; gap:6px; margin-top:8px; }
+.asset-order code { margin-right:auto; }

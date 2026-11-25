@@ -1,6 +1,9 @@
 import asyncio
 import json
 import logging
+import time
+import httpx
+from backend.services import gpu
 from contextlib import suppress
 
 from filelock import FileLock, Timeout
@@ -97,12 +100,26 @@ class Worker:
         with FileLock(str(self.store.root / "worker.lock"), timeout=0):
             self.store.recover()
             beat = asyncio.create_task(self.pulse())
+            next_idle_check = time.monotonic() + self.cfg.gpu_idle_release_seconds
             try:
                 while True:
-                    job = self.store.claim()
+                    try:
+                        with gpu.claim_lock(self.store):
+                            job = self.store.claim()
+                    except Timeout:
+                        await asyncio.sleep(self.cfg.worker_poll_seconds)
+                        continue
                     if job:
                         await self.execute(job)
+                        next_idle_check = time.monotonic() + self.cfg.gpu_idle_release_seconds
                     else:
+                        ttl = self.cfg.gpu_idle_release_seconds
+                        if ttl and self.cfg.inference_backend == "comfyui" and time.monotonic() >= next_idle_check:
+                            try:
+                                await gpu.release_if_idle(self.cfg, self.store)
+                            except (httpx.HTTPError, RuntimeError) as exc:
+                                log.info("idle GPU release deferred: %s", type(exc).__name__)
+                            next_idle_check = time.monotonic() + min(ttl, 5)
                         await asyncio.sleep(self.cfg.worker_poll_seconds)
             finally:
                 beat.cancel()

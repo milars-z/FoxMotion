@@ -60,6 +60,9 @@ async def generate(args, pid, stamp, directory):
             queue = await resp.json()
             if queue["queue_running"] or queue["queue_pending"]:
                 raise RuntimeError("Comfy queue busy")
+        async with client.get(BASE + "/object_info/FoxMotionUNETLoader") as resp:
+            if resp.status == 200 and "FoxMotionUNETLoader" in await resp.json():
+                prompt["140:127"]["class_type"] = "FoxMotionUNETLoader"
         state["process_ready"] = True
         save()
         async with client.ws_connect(BASE + "/ws?clientId=" + job_id, heartbeat=30) as ws:

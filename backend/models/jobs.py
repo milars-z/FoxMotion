@@ -1,3 +1,4 @@
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -82,6 +83,7 @@ class Options(Strict):
     steps: list[int] = Field(min_length=1)
     presets: list[str] = Field(min_length=1)
     slots: dict[Role, Slot] = Field(default_factory=dict)
+    reference_tags: bool = False
     combinations: list[dict[Role, int]] = Field(default_factory=list)
     samplers: list[str] = Field(default_factory=list)
     schedulers: list[str] = Field(default_factory=list)
@@ -152,5 +154,10 @@ def validate_request(req: Request, cap: Capability):
     if req.mode == "reference" and not req.roles:
         raise ValueError("请至少提供一个参考素材")
     counts = {r: req.roles.count(r) for r in set(req.roles)}
+    if o.reference_tags:
+        roles = {"Picture": "ref_image", "Video": "ref_video", "Audio": "ref_audio"}
+        for kind, index in re.findall(r"<(Picture|Video|Audio)\s+([^>]*)>", req.prompt):
+            if not re.fullmatch(r"[1-9]\d{0,2}", index) or int(index) > counts.get(roles[kind], 0):
+                raise ValueError(f"参考索引 <{kind} {index}> 超出已上传素材范围")
     if o.combinations and counts not in o.combinations:
         raise ValueError("当前工作流未配置这种素材组合")

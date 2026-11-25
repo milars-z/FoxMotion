@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     max_request_mb: int = Field(192, ge=1, le=4096)
     mock_stage_seconds: float = Field(1, ge=0, le=30)
     comfy_timeout_seconds: int = Field(3600, ge=5)
+    gpu_idle_release_seconds: int = Field(0, ge=0)
     worker_poll_seconds: float = Field(0.4, ge=0.05, le=10)
 
     @model_validator(mode="after")

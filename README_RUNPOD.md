@@ -4,6 +4,8 @@
 
 A40 的迁移后实测、缓存配置、自动预热和离线 runtime 恢复见 [Phase 2 实验报告](docs/RUNPOD_PHASE2.md)。
 
+多模式工作流、参考索引、GPU 释放及真实验收见 [Phase 3 部署报告](docs/RUNPOD_PHASE3.md)。
+
 ## 从已克隆的仓库启动 Mock
 
 在 VS Code Remote SSH 的 **Pod 终端**运行。首次启动选用已完成 GPU 检查的 RunPod PyTorch 镜像。只给 SSH 守护进程映射 TCP 端口，移除模板中不需要的 HTTP/TCP 转发与 Jupyter 等公开入口。

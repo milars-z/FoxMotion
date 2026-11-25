@@ -80,13 +80,18 @@ EOF
     program api "$studio -m backend" "$RUNTIME_DIR"
     program worker "$studio -m backend.worker" "$RUNTIME_DIR"
     if [[ $INFERENCE_BACKEND == comfyui ]]; then
+        plugins="$RUNTIME_DIR/comfy/custom_nodes"
+        mkdir -p "$plugins"
+        plugin="$plugins/foxmotion_runtime"
+        if [[ ! -e $plugin && ! -L $plugin ]]; then ln -s "$here/foxmotion_runtime" "$plugin"; fi
+        [[ $(realpath "$plugin") == "$here/foxmotion_runtime" ]] || die "Unexpected foxmotion_runtime path"
         db_flag=""
         # Some migrated checkouts omit the parent of Comfy's default asset DB.
         if [[ -f $RUNTIME_DIR/comfy/user/comfyui.db || ! -d $COMFYUI_HOME/user ]]; then
             mkdir -p -- "$RUNTIME_DIR/comfy/user"
             db_flag=" --database-url sqlite:///$RUNTIME_DIR/comfy/user/comfyui.db"
         fi
-        program comfy "$comfy $COMFYUI_HOME/main.py --listen 127.0.0.1 --port 8188 --disable-api-nodes --disable-all-custom-nodes --disable-auto-launch --disable-pinned-memory --disable-async-offload $cache_flag --base-directory $RUNTIME_DIR/comfy --extra-model-paths-config $RUNTIME_DIR/extra-models.yaml --input-directory $COMFYUI_INPUT_DIR --output-directory $COMFYUI_OUTPUT_DIR --temp-directory $RUNTIME_DIR/comfy/temp$db_flag" "$COMFYUI_HOME"
+        program comfy "$comfy $COMFYUI_HOME/main.py --listen 127.0.0.1 --port 8188 --disable-api-nodes --disable-all-custom-nodes --whitelist-custom-nodes foxmotion_runtime --disable-auto-launch --disable-pinned-memory --disable-async-offload $cache_flag --base-directory $RUNTIME_DIR/comfy --extra-model-paths-config $RUNTIME_DIR/extra-models.yaml --input-directory $COMFYUI_INPUT_DIR --output-directory $COMFYUI_OUTPUT_DIR --temp-directory $RUNTIME_DIR/comfy/temp$db_flag" "$COMFYUI_HOME"
     fi
     "$RUNTIME_DIR/studio/bin/supervisord" -c "$conf" 9>&-
     echo "$signature" > "$RUNTIME_DIR/started-config"
